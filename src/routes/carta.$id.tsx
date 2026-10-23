@@ -26,7 +26,7 @@ function Pending() {
   return <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">Contenido pendiente de desarrollo.</p>;
 }
 
-function List({ items }: { items?: string[] }) {
+function List({ items }: { items?: string[] | undefined }) {
   if (!items?.length) return <Pending />;
   return <ul className="list-disc space-y-1 pl-5">{items.map((i) => <li key={i}>{i}</li>)}</ul>;
 }
