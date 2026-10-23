@@ -78,11 +78,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "ATELIER" },
+      { name: "description", content: "Plataforma de aprendizaje de storytelling y copywriting." },
+      { property: "og:title", content: "ATELIER" },
+      { property: "og:description", content: "Plataforma de aprendizaje de storytelling y copywriting." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
@@ -103,7 +102,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="es">
       <head>
         <HeadContent />
       </head>
@@ -117,11 +116,22 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const nav = "rounded-md px-3 py-1.5 text-sm hover:bg-accent";
+  const act = { className: `${nav} bg-secondary font-semibold` };
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <header className="border-b">
+        <nav className="mx-auto flex max-w-6xl flex-wrap items-center gap-1 px-4 py-3">
+          <Link to="/" className="mr-4 font-bold tracking-widest">ATELIER</Link>
+          <Link to="/biblioteca" className={nav} activeProps={act}>Biblioteca</Link>
+          <Link to="/recetas" className={nav} activeProps={act}>Recetas</Link>
+          <Link to="/taller" className={nav} activeProps={act}>Taller</Link>
+        </nav>
+      </header>
+      <main className="mx-auto max-w-6xl px-4 py-6">
+        <Outlet />
+      </main>
     </QueryClientProvider>
   );
 }
