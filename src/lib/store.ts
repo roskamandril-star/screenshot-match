@@ -6,8 +6,8 @@ export interface Project {
   id: string;
   name: string;
   goal: string;
-  recipeId?: string;
-  currentStepId?: string;
+  recipeId?: string | undefined;
+  currentStepId?: string | undefined;
   cardIds: string[];
   draft: string;
   decisions: { at: string; note: string }[];
@@ -16,7 +16,7 @@ export interface Project {
 
 export interface ExerciseAnswer {
   cardId: string;
-  projectId?: string;
+  projectId?: string | undefined;
   values: Record<string, string>;
   savedAt: string;
 }
@@ -25,7 +25,7 @@ export interface AppState {
   favorites: string[];
   answers: Record<string, ExerciseAnswer>; // clave: cardId
   projects: Project[];
-  activeProjectId?: string;
+  activeProjectId?: string | undefined;
 }
 
 const KEY = "atelier-state-v1";
