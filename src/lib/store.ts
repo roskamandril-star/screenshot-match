@@ -11,6 +11,22 @@ export interface StepState {
   completedAt?: string | undefined;
 }
 
+export interface ActivityResult {
+  text: string;          // lo que el usuario ha escrito en esta actividad
+  completed: boolean;    // el usuario confirma manualmente
+  updatedAt?: string | undefined;
+}
+
+export interface ProjectDecision {
+  id: string;
+  decision: string;
+  justification: string;
+  evidence: string;
+  stepId?: string | undefined;
+  at: string;
+  updatedAt?: string | undefined;
+}
+
 export interface ProjectNote {
   id: string;
   kind: "decision" | "nota";
@@ -28,6 +44,9 @@ export interface Project {
   cardIds: string[];
   draft: string;
   steps?: Record<string, StepState> | undefined;
+  /** clave: `${stepId}:${activityId}` → resultado de la actividad */
+  activities?: Record<string, ActivityResult> | undefined;
+  decisions?: ProjectDecision[] | undefined;
   notes?: ProjectNote[] | undefined;
   /** @deprecated formato antiguo; se conserva para no perder datos */
   decisions: { at: string; note: string }[];
@@ -122,8 +141,9 @@ export const newProject = (name: string, goal: string, recipeId?: string, firstS
   cardIds: [],
   draft: "",
   steps: {},
-  notes: [],
+  activities: {},
   decisions: [],
+  notes: [],
   createdAt: new Date().toISOString(),
 });
 
@@ -143,6 +163,64 @@ export const updateStep = (s: AppState, projectId: string, stepId: string, field
 export const goToStep = (s: AppState, projectId: string, stepId: string): AppState =>
   mapProject(s, projectId, (p) => ({ ...p, currentStepId: stepId }));
 
+// --- Actividades ---
+
+export const activityKey = (stepId: string, activityId: string) => `${stepId}:${activityId}`;
+
+export const getActivity = (p: Project, stepId: string, activityId: string): ActivityResult =>
+  p.activities?.[activityKey(stepId, activityId)] ?? { text: "", completed: false };
+
+export const updateActivity = (
+  s: AppState,
+  projectId: string,
+  stepId: string,
+  activityId: string,
+  fields: Partial<ActivityResult>,
+): AppState =>
+  mapProject(s, projectId, (p) => {
+    const key = activityKey(stepId, activityId);
+    const prev = p.activities?.[key] ?? { text: "", completed: false };
+    const next: ActivityResult = { ...prev, ...fields, updatedAt: new Date().toISOString() };
+    return { ...p, activities: { ...p.activities, [key]: next } };
+  });
+
+// --- Decisiones ---
+
+export const addDecision = (
+  s: AppState,
+  projectId: string,
+  decision: string,
+  justification: string,
+  evidence: string,
+  stepId?: string,
+): AppState =>
+  mapProject(s, projectId, (p) => ({
+    ...p,
+    decisions: [
+      ...(p.decisions ?? []),
+      { id: crypto.randomUUID(), decision, justification, evidence, stepId, at: new Date().toISOString() },
+    ],
+  }));
+
+export const editDecision = (
+  s: AppState,
+  projectId: string,
+  decisionId: string,
+  fields: Partial<Pick<ProjectDecision, "decision" | "justification" | "evidence" | "stepId">>,
+): AppState =>
+  mapProject(s, projectId, (p) => ({
+    ...p,
+    decisions: (p.decisions ?? []).map((d) =>
+      d.id === decisionId ? { ...d, ...fields, updatedAt: new Date().toISOString() } : d,
+    ),
+  }));
+
+export const removeDecision = (s: AppState, projectId: string, decisionId: string): AppState =>
+  mapProject(s, projectId, (p) => ({
+    ...p,
+    decisions: (p.decisions ?? []).filter((d) => d.id !== decisionId),
+  }));
+
 export const addNote = (s: AppState, projectId: string, kind: ProjectNote["kind"], text: string, stepId?: string): AppState =>
   mapProject(s, projectId, (p) => ({
     ...p,
@@ -161,10 +239,11 @@ export function getMentorContext(s: AppState) {
     recipeId: project?.recipeId,
     currentStepId: project?.currentStepId,
     stepStates: project?.steps ?? {},
+    activities: project?.activities ?? {},
     selectedCards: project?.cardIds ?? [],
     answers: Object.values(s.answers).filter((a) => a.projectId === project?.id),
-    decisions: (project?.notes ?? []).filter((n) => n.kind === "decision"),
-    notes: (project?.notes ?? []).filter((n) => n.kind === "nota"),
+    decisions: project?.decisions ?? [],
+    notes: (project?.notes ?? []).filter((n) => n.kind === "decision"),
     draft: project?.draft ?? "",
   };
 }

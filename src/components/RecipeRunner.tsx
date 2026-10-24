@@ -1,9 +1,20 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { getCard } from "@/lib/cards";
 import type { Recipe, RecipeStep } from "@/lib/recipes";
-import { getStep, goToStep, updateStep, useAppState, type Project, type StepStatus } from "@/lib/store";
+import { ActivityPanel } from "@/components/ActivityPanel";
+import { DecisionsPanel } from "@/components/DecisionsPanel";
+import {
+  getActivity,
+  getStep,
+  goToStep,
+  updateStep,
+  useAppState,
+  type Project,
+  type StepStatus,
+} from "@/lib/store";
 
 const STATUS_LABEL: Record<StepStatus, string> = {
   pendiente: "Pendiente",
@@ -25,8 +36,12 @@ const STATUS_DOT: Record<StepStatus, string> = {
 
 const STATUSES: StepStatus[] = ["pendiente", "en_curso", "completado"];
 
+const TABS = ["Actividades", "Resultados", "Decisiones"] as const;
+type Tab = (typeof TABS)[number];
+
 export function RecipeRunner({ recipe, project }: { recipe: Recipe; project: Project }) {
   const [, update] = useAppState();
+  const [tab, setTab] = useState<Tab>("Actividades");
   const currentStepId = project.currentStepId ?? recipe.steps[0]?.id ?? "";
   const currentIdx = recipe.steps.findIndex((s) => s.id === currentStepId);
   const step = recipe.steps[currentIdx] ?? recipe.steps[0];
@@ -43,12 +58,27 @@ export function RecipeRunner({ recipe, project }: { recipe: Recipe; project: Pro
   const goPrev = () => hasPrev && selectStep(recipe.steps[currentIdx - 1].id);
   const goNext = () => hasNext && selectStep(recipe.steps[currentIdx + 1].id);
 
+  // Actividades completadas en la etapa actual
+  const activities = step.activities ?? [];
+  const completedActivities = activities.filter(
+    (a) => getActivity(project, step.id, a.id).completed,
+  ).length;
+
+  // Resultados de etapas anteriores para consultar
+  const previousSteps = recipe.steps.slice(0, currentIdx);
+  const hasPriorResults = previousSteps.some((s) =>
+    (s.activities ?? []).some((a) => {
+      const r = getActivity(project, s.id, a.id);
+      return r.text.trim() !== "" || r.completed;
+    }),
+  );
+
   return (
     <div className="space-y-4">
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold">Progreso de la receta</h3>
-          <span className="text-sm text-muted-foreground">{completedCount}/{recipe.steps.length} completados</span>
+          <span className="text-sm text-muted-foreground">{completedCount}/{recipe.steps.length} etapas completadas</span>
         </div>
         <Progress value={progressPct} />
       </div>
@@ -71,40 +101,10 @@ export function RecipeRunner({ recipe, project }: { recipe: Recipe; project: Pro
       </div>
 
       <div className="rounded-lg border p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-xs text-muted-foreground">Paso {currentIdx + 1} de {recipe.steps.length}</div>
-            <h3 className="text-lg font-semibold">{step.title}</h3>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-sm"><span className="font-medium">Objetivo: </span>{step.description}</p>
-          <p className="text-sm"><span className="font-medium">Actividad: </span>{step.activity}</p>
-        </div>
-
         <div>
-          <h4 className="mb-1.5 text-sm font-medium">Cartas relacionadas</h4>
-          <div className="flex flex-wrap gap-1.5">
-            {step.cards.map((id) => {
-              const card = getCard(id);
-              return (
-                <Link
-                  key={id}
-                  to="/carta/$id"
-                  params={{ id }}
-                  search={{ proyecto: project.id, paso: step.id }}
-                  className="rounded-md border bg-secondary px-2.5 py-1 text-xs hover:bg-accent"
-                >
-                  {id} {card?.name ?? ""}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="rounded-md bg-muted/50 p-3 text-sm">
-          <span className="font-medium">Resultado esperado: </span>{step.output}
+          <div className="text-xs text-muted-foreground">Etapa {currentIdx + 1} de {recipe.steps.length}</div>
+          <h3 className="text-lg font-semibold">{step.title}</h3>
+          <p className="text-sm text-muted-foreground mt-0.5">{step.description}</p>
         </div>
 
         {step.usesOutputsOf && step.usesOutputsOf.length > 0 && (
@@ -120,7 +120,7 @@ export function RecipeRunner({ recipe, project }: { recipe: Recipe; project: Pro
                     onClick={() => dep && selectStep(depId)}
                     className="underline hover:text-foreground"
                   >
-                    paso {depIdx + 1}{dep ? ` (${dep.title})` : ""}
+                    etapa {depIdx + 1}{dep ? ` (${dep.title})` : ""}
                   </button>
                 </span>
               );
@@ -129,7 +129,7 @@ export function RecipeRunner({ recipe, project }: { recipe: Recipe; project: Pro
         )}
 
         <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-          <span className="text-sm font-medium">Estado:</span>
+          <span className="text-sm font-medium">Estado de la etapa:</span>
           <div className="flex gap-1">
             {STATUSES.map((st) => (
               <button
@@ -144,6 +144,118 @@ export function RecipeRunner({ recipe, project }: { recipe: Recipe; project: Pro
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-1 border-b">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === t ? "border-primary font-semibold" : "border-transparent text-muted-foreground"}`}
+          >
+            {t}
+            {t === "Actividades" && activities.length > 0 && ` (${completedActivities}/${activities.length})`}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {tab === "Actividades" && (
+          <div className="space-y-3">
+            {activities.length > 0 ? (
+              activities.map((a, i) => (
+                <ActivityPanel
+                  key={a.id}
+                  recipeId={recipe.id}
+                  step={step}
+                  activity={a}
+                  project={project}
+                  index={i}
+                />
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">Las actividades de esta etapa se definirán próximamente.</p>
+            )}
+          </div>
+        )}
+
+        {tab === "Resultados" && (
+          <div className="space-y-4">
+            <div>
+              <h4 className="mb-2 text-sm font-medium">Resultados de esta etapa</h4>
+              {activities.length > 0 ? (
+                <div className="space-y-2">
+                  {activities.map((a) => {
+                    const r = getActivity(project, step.id, a.id);
+                    return (
+                      <div key={a.id} className="rounded-md border p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">{a.outputLabel}</span>
+                          {r.completed && (
+                            <Badge variant="secondary" className="text-xs">Completada</Badge>
+                          )}
+                        </div>
+                        <p className="mt-1 text-sm text-muted-foreground whitespace-pre-line">
+                          {r.text.trim() || "Sin contenido todavía."}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No hay actividades con resultados en esta etapa.</p>
+              )}
+            </div>
+
+            <div>
+              <h4 className="mb-2 text-sm font-medium">Resultados de etapas anteriores</h4>
+              {hasPriorResults ? (
+                <div className="space-y-2">
+                  {previousSteps.map((s) => {
+                    const stepActivities = (s.activities ?? []).filter((a) => {
+                      const r = getActivity(project, s.id, a.id);
+                      return r.text.trim() !== "" || r.completed;
+                    });
+                    if (stepActivities.length === 0) return null;
+                    return (
+                      <div key={s.id} className="rounded-md border p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold">{s.title}</span>
+                          <button
+                            onClick={() => selectStep(s.id)}
+                            className="text-xs underline text-muted-foreground hover:text-foreground"
+                          >
+                            Ir a esta etapa
+                          </button>
+                        </div>
+                        <div className="mt-2 space-y-1.5">
+                          {stepActivities.map((a) => {
+                            const r = getActivity(project, s.id, a.id);
+                            return (
+                              <div key={a.id} className="rounded bg-muted/50 p-2">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-medium">{a.outputLabel}</span>
+                                  {r.completed && <span className="text-xs text-emerald-600 dark:text-emerald-400">✓</span>}
+                                </div>
+                                <p className="mt-0.5 text-sm text-muted-foreground whitespace-pre-line">
+                                  {r.text.trim() || "Sin contenido."}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No hay resultados de etapas anteriores todavía.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === "Decisiones" && <DecisionsPanel project={project} />}
+      </div>
+
       <div className="flex items-center justify-between gap-2">
         <button
           onClick={goPrev}
@@ -152,7 +264,7 @@ export function RecipeRunner({ recipe, project }: { recipe: Recipe; project: Pro
         >
           ← Anterior
         </button>
-        <Badge variant="secondary">Paso {currentIdx + 1} / {recipe.steps.length}</Badge>
+        <Badge variant="secondary">Etapa {currentIdx + 1} / {recipe.steps.length}</Badge>
         <button
           onClick={goNext}
           disabled={!hasNext}
