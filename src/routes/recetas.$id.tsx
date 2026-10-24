@@ -1,6 +1,7 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { getRecipe } from "@/lib/recipes";
 import { getCard } from "@/lib/cards";
+import { RecipeProjects } from "@/components/RecipeProjects";
 
 export const Route = createFileRoute("/recetas/$id")({
   loader: ({ params }) => {
@@ -25,14 +26,16 @@ function RecipePage() {
       <h1 className="text-2xl font-bold">{recipe.name}</h1>
       <p className="text-muted-foreground">{recipe.goal}</p>
       <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
-        Estructura navegable. La ejecución guiada paso a paso dentro del taller está pendiente.
+        Crea un proyecto para ejecutar esta receta paso a paso en el Taller.
       </p>
+      <RecipeProjects recipe={recipe} />
       <ol className="space-y-3">
         {recipe.steps.map((s, i) => (
           <li key={s.id} className="rounded-lg border p-4">
             <div className="text-xs text-muted-foreground">Paso {i + 1}</div>
             <h2 className="font-semibold">{s.title}</h2>
-            <p className="text-sm">{s.description}</p>
+            <p className="text-sm"><strong>Objetivo:</strong> {s.description}</p>
+            <p className="text-sm"><strong>Actividad:</strong> {s.activity}</p>
             <div className="mt-2 flex flex-wrap gap-1">
               {s.cards.map((id) => (
                 <Link key={id} to="/carta/$id" params={{ id }} className="rounded bg-secondary px-2 py-0.5 text-xs hover:underline">
