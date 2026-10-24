@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { newProject, useAppState } from "@/lib/store";
 import { getCard } from "@/lib/cards";
-import { RECIPES } from "@/lib/recipes";
+import { getRecipe, RECIPES } from "@/lib/recipes";
+import { RecipeRunner } from "@/components/RecipeRunner";
 
 export const Route = createFileRoute("/taller")({
   head: () => ({
@@ -33,6 +34,27 @@ function Taller() {
   const patch = (fields: Partial<NonNullable<typeof active>>) =>
     update((s) => ({ ...s, projects: s.projects.map((p) => (p.id === s.activeProjectId ? { ...p, ...fields } : p)) }));
 
+  const changeRecipe = (recipeId: string) => {
+    if (!active || !recipeId) {
+      patch({ recipeId: recipeId || undefined, currentStepId: undefined });
+      return;
+    }
+    const recipe = getRecipe(recipeId);
+    const firstStep = recipe?.steps[0]?.id;
+    const hasWork =
+      active.draft.trim() !== "" ||
+      (active.steps && Object.keys(active.steps).length > 0) ||
+      active.currentStepId !== undefined;
+    const isDifferentRecipe = active.recipeId !== recipeId;
+    if (isDifferentRecipe && hasWork) {
+      const ok = confirm(
+        `Este proyecto ya tiene trabajo asociado a otra receta (borrador, pasos o progreso).\n\nCambiar a «${recipe?.name ?? recipeId}» no borrará ese trabajo: se conservará en el almacenamiento local, pero el paso activo se reiniciará al primer paso de la nueva receta.\n\n¿Quieres continuar?`,
+      );
+      if (!ok) return;
+    }
+    patch({ recipeId, currentStepId: firstStep });
+  };
+
   return (
     <div className="grid gap-6 lg:grid-cols-[18rem_1fr]">
       <aside className="space-y-4">
@@ -54,7 +76,7 @@ function Taller() {
       </aside>
 
       {active ? (
-        <section className="space-y-4">
+        <section className="space-y-6">
           <div className="flex items-start justify-between gap-2">
             <div>
               <h2 className="text-xl font-semibold">{active.name}</h2>
@@ -65,13 +87,20 @@ function Taller() {
               className="rounded-md border px-3 py-1.5 text-sm text-destructive"
             >Eliminar</button>
           </div>
+
           <label className="block text-sm">
             <span className="font-medium">Receta asociada</span>
-            <select className={inp} value={active.recipeId ?? ""} onChange={(e) => patch({ recipeId: e.target.value || undefined, currentStepId: undefined })}>
+            <select className={inp} value={active.recipeId ?? ""} onChange={(e) => changeRecipe(e.target.value)}>
               <option value="">Ninguna</option>
               {RECIPES.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
           </label>
+
+          {active.recipeId && (() => {
+            const recipe = getRecipe(active.recipeId);
+            return recipe ? <RecipeRunner recipe={recipe} project={active} /> : null;
+          })()}
+
           <div>
             <h3 className="mb-1 text-sm font-medium">Cartas del proyecto</h3>
             {active.cardIds.length ? (
@@ -85,6 +114,7 @@ function Taller() {
               </div>
             ) : <p className="text-sm text-muted-foreground">Añade cartas desde su ficha en la <Link to="/biblioteca" className="underline">biblioteca</Link>.</p>}
           </div>
+
           <label className="block text-sm">
             <span className="font-medium">Texto en elaboración</span>
             <textarea rows={14} className={inp} value={active.draft} onChange={(e) => patch({ draft: e.target.value })} placeholder="Escribe aquí tu borrador. Se guarda automáticamente en este navegador." />
