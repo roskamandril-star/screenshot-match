@@ -1,10 +1,17 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getCard, DISCIPLINE_LABEL, LEVEL_LABEL, TYPE_LABEL, type Card } from "@/lib/cards";
+import { getRecipe } from "@/lib/recipes";
 import { CardTile } from "@/components/CardTile";
-import { addCardToProject, toggleFavorite, useAppState } from "@/lib/store";
+import { addCardToProject, getAnswer, saveAnswer, toggleFavorite, useAppState } from "@/lib/store";
+
+type CardSearch = { proyecto?: string | undefined; paso?: string | undefined };
 
 export const Route = createFileRoute("/carta/$id")({
+  validateSearch: (s: Record<string, unknown>): CardSearch => ({
+    proyecto: typeof s.proyecto === "string" ? s.proyecto : undefined,
+    paso: typeof s.paso === "string" ? s.paso : undefined,
+  }),
   loader: ({ params }) => {
     const card = getCard(params.id);
     if (!card) throw notFound();
@@ -22,8 +29,8 @@ export const Route = createFileRoute("/carta/$id")({
 const TABS = ["Aprender", "Aplicar", "Ejemplo", "Errores", "Relacionadas", "Fuentes"] as const;
 type Tab = (typeof TABS)[number];
 
-function Pending() {
-  return <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">Contenido pendiente de desarrollo.</p>;
+function Pending({ what = "Contenido" }: { what?: string }) {
+  return <p className="rounded-md bg-muted p-3 text-sm text-muted-foreground">{what} pendiente de desarrollo.</p>;
 }
 
 function List({ items }: { items?: string[] | undefined }) {
@@ -33,21 +40,31 @@ function List({ items }: { items?: string[] | undefined }) {
 
 function CardPage() {
   const { card } = Route.useLoaderData();
+  const { proyecto, paso } = Route.useSearch();
   const [state, update] = useAppState();
-  const [tab, setTab] = useState<Tab>("Aprender");
+  const [tab, setTab] = useState<Tab>(proyecto ? "Aplicar" : "Aprender");
   const [projectId, setProjectId] = useState("");
   const fav = state.favorites.includes(card.id);
-  useEffect(() => setTab("Aprender"), [card.id]);
+  const ctxProject = proyecto ? state.projects.find((p) => p.id === proyecto) : undefined;
+  const ctxStep = ctxProject?.recipeId && paso ? getRecipe(ctxProject.recipeId)?.steps.find((s) => s.id === paso) : undefined;
+  useEffect(() => setTab(proyecto ? "Aplicar" : "Aprender"), [card.id]);
 
   return (
     <div className="space-y-4">
-      <Link to="/biblioteca" className="text-sm text-muted-foreground hover:underline">← Biblioteca</Link>
+      {ctxProject ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary bg-secondary p-3 text-sm">
+          <span>Trabajando en <strong>{ctxProject.name}</strong>{ctxStep && <> · paso «{ctxStep.title}»</>}. Las respuestas se guardan en este proyecto.</span>
+          <Link to="/taller" search={{ proyecto: ctxProject.id }} className="font-medium underline">← Volver al taller</Link>
+        </div>
+      ) : (
+        <Link to="/biblioteca" className="text-sm text-muted-foreground hover:underline">← Biblioteca</Link>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="font-mono text-sm text-muted-foreground">{card.id} · <span className="capitalize">{card.phase}</span> · {DISCIPLINE_LABEL[card.discipline]} · {TYPE_LABEL[card.type]} · {LEVEL_LABEL[card.level]}</div>
           <h1 className="text-2xl font-bold">{card.name}</h1>
           <p className="mt-1 max-w-2xl text-muted-foreground">{card.summary}</p>
-          {card.status === "pendiente" && <p className="mt-2 text-sm font-medium">Ficha resumida: contenido completo pendiente.</p>}
+          {card.status === "pendiente" && <p className="mt-2 text-sm font-medium">Ficha resumida: contenido completo y ejercicio pendientes.</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={() => update((s) => toggleFavorite(s, card.id))} className="rounded-md border px-3 py-1.5 text-sm">
@@ -79,7 +96,7 @@ function CardPage() {
 
       <div className="max-w-3xl space-y-4">
         {tab === "Aprender" && <Learn card={card} />}
-        {tab === "Aplicar" && <Apply card={card} />}
+        {tab === "Aplicar" && <Apply card={card} projectId={ctxProject?.id} stepId={ctxStep?.id} />}
         {tab === "Ejemplo" && (card.example ? (
           <>
             <Section title="Ejemplo"><p className="whitespace-pre-line">{card.example}</p></Section>
@@ -94,7 +111,7 @@ function CardPage() {
         )}
         {tab === "Fuentes" && (card.references?.length ? (
           <ul className="space-y-2">{card.references.map((r) => <li key={r.title}><strong>{r.author}</strong> — {r.title}{r.note && <div className="text-sm text-muted-foreground">{r.note}</div>}</li>)}</ul>
-        ) : <Pending />)}
+        ) : <Pending what="Fuentes" />)}
       </div>
     </div>
   );
@@ -116,20 +133,24 @@ function Learn({ card }: { card: Card }) {
   );
 }
 
-function Apply({ card }: { card: Card }) {
-  const [state, update] = useAppState();
-  const saved = state.answers[card.id];
+function Apply({ card, projectId, stepId }: { card: Card; projectId?: string | undefined; stepId?: string | undefined }) {
+  const [state, update, ready] = useAppState();
+  const saved = getAnswer(state, card.id, projectId);
   const [values, setValues] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState("");
-  useEffect(() => { if (saved) setValues(saved.values); }, [saved?.savedAt]);
+  useEffect(() => { if (ready) setValues(saved?.values ?? {}); }, [ready, saved?.savedAt, projectId]);
 
-  if (!card.exercise) return <Pending />;
+  if (!card.exercise) return <Pending what="Ejercicio" />;
   const save = () => {
-    update((s) => ({ ...s, answers: { ...s.answers, [card.id]: { cardId: card.id, projectId: s.activeProjectId, values, savedAt: new Date().toISOString() } } }));
-    setMsg("Respuesta guardada.");
+    update((s) => {
+      const next = saveAnswer(s, card.id, values, projectId, stepId);
+      return projectId ? addCardToProject(next, projectId, card.id) : next;
+    });
+    setMsg(projectId ? "Respuesta guardada en el proyecto." : "Respuesta guardada (práctica libre, sin proyecto).");
   };
   return (
     <div className="space-y-4">
+      {!projectId && <p className="text-sm text-muted-foreground">Práctica libre: esta respuesta no está asociada a ningún proyecto.</p>}
       <p>{card.exercise.intro}</p>
       {card.exercise.fields.map((f) => (
         <label key={f.id} className="block">
